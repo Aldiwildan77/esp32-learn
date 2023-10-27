@@ -1,0 +1,175 @@
+#include <Arduino.h>
+#include <ArduinoOTA.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+// constants
+const uint64_t DEFAULT_TIME = 1000000; // 1 second
+const uint8_t TRIGGER_PIN = 5;         // D5
+const uint8_t ECHO_PIN = 18;           // D18
+const unsigned long BAUD_RATE = 115200;
+
+// WiFi credentials
+const char *ssid = "****";
+const char *password = "****";
+
+// flip flop timer
+volatile bool timerFlag = false;
+
+// client
+WiFiClient espClient;
+TaskHandle_t taskFlipFlop;
+TaskHandle_t taskRest;
+TaskHandle_t taskUltrasonic;
+
+// function declaration
+void timerFlipFlop(void *pvParameter);
+void timerRest(void *pvParameter);
+void timerUltrasonic(void *pvParameter);
+
+void setup()
+{
+  Serial.begin(BAUD_RATE);
+
+  randomSeed(analogRead(0));
+
+  // ! pin mode
+  // ultrasonic sensor
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(TRIGGER_PIN, OUTPUT);
+
+  // flip flop
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  // // wifi config
+  // IPAddress local_ip = IPAddress(192, 168, 1, 10);
+  // IPAddress gateway_ip = IPAddress(192, 168, 1, 1);
+  // IPAddress netmask = IPAddress(255, 255, 255, 0);
+  // IPAddress dns_ip = IPAddress(1, 1, 1, 1);
+
+  // // Connect to WiFi
+  // bool wifi_config = WiFi.config(local_ip, gateway_ip, netmask, dns_ip);
+  // if (!wifi_config)
+  // {
+  //   Serial.println("STA Failed to configure");
+  // }
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(1 * 1000);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi");
+
+  Serial.printf("IP address: %s\n", WiFi.localIP().toString().c_str());
+
+  // WiFi.enableAP(true);
+  // WiFi.softAP(ssid, password);
+  // Serial.println("Connected to WiFi");
+
+  // OTA
+  // ArduinoOTA.begin();
+
+  // Task Scheduler
+  xTaskCreatePinnedToCore(
+      timerFlipFlop,   /* Function to implement the task */
+      "timerFlipFlop", /* Name of the task */
+      10 * 1000,       /* Stack size in words */
+      NULL,            /* Task input parameter */
+      0,               /* Priority of the task */
+      &taskFlipFlop,   /* Task handle. */
+      0                /* Core where the task should run */
+  );
+
+  xTaskCreatePinnedToCore(
+      timerRest,   /* Function to implement the task */
+      "timerRest", /* Name of the task */
+      10 * 1000,   /* Stack size in words */
+      NULL,        /* Task input parameter */
+      3,           /* Priority of the task */
+      &taskRest,   /* Task handle. */
+      1            /* Core where the task should run */
+  );
+
+  xTaskCreatePinnedToCore(
+      timerUltrasonic,   /* Function to implement the task */
+      "timerUltrasonic", /* Name of the task */
+      10 * 1000,         /* Stack size in words */
+      NULL,              /* Task input parameter */
+      3,                 /* Priority of the task */
+      &taskUltrasonic,   /* Task handle. */
+      1                  /* Core where the task should run */
+  );
+}
+
+void loop()
+{
+  vTaskDelete(NULL);
+}
+
+void timerFlipFlop(void *pvParameter)
+{
+  while (true)
+  {
+    // OTA
+    // ArduinoOTA.handle();
+
+    // flip flop
+    timerFlag = !timerFlag;
+    digitalWrite(LED_BUILTIN, timerFlag);
+    vTaskDelay(1 * 1000 / portTICK_PERIOD_MS);
+  }
+}
+
+// rest api timer
+void timerRest(void *pvParameter)
+{
+  while (true)
+  {
+    HTTPClient http;
+    Serial.println("Sending request to API");
+    http.begin("https://fetcher.requestcatcher.com/test");
+    http.addHeader("Content-Type", "text/plain");
+    http.POST("Hello World " + String(random(0, 100)));
+    Serial.println(http.getString());
+    http.end();
+    vTaskDelay(3 * 1000 / portTICK_PERIOD_MS);
+  }
+}
+
+// ultrasonic sensor
+void timerUltrasonic(void *pvParameter)
+{
+  while (true)
+  {
+    // give signal first
+    digitalWrite(TRIGGER_PIN, LOW);
+    delayMicroseconds(2);
+    digitalWrite(TRIGGER_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIGGER_PIN, LOW);
+
+    // receive signal
+    long duration = pulseIn(ECHO_PIN, HIGH);
+
+    // calculate distance
+    long distance = (duration / 2) / 29.1;
+
+    if (distance > 0)
+    {
+      Serial.printf("Distance: %d cm\n", distance);
+      digitalWrite(LED_BUILTIN, HIGH);
+      delay(100);
+      digitalWrite(LED_BUILTIN, LOW);
+      delay(100);
+      digitalWrite(LED_BUILTIN, HIGH);
+      delay(100);
+      digitalWrite(LED_BUILTIN, LOW);
+    }
+
+    vTaskDelay(1 * 1000 / portTICK_PERIOD_MS);
+  }
+}
