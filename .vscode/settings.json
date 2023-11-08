@@ -1,0 +1,13 @@
+{
+  "files.associations": {
+    "*.js": "javascript",
+    "*.json": "json",
+    "*.gql": "graphql",
+    "Makefile": "makefile",
+    "*.html": "html",
+    "*.jsx": "javascriptreact",
+    ".env": "dotenv",
+    "system_error": "cpp",
+    "cmath": "cpp"
+  }
+}
